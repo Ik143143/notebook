@@ -1,0 +1,227 @@
+Import Lib
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+%matplotlib inline
+
+import warnings
+warnings.filterwarnings('ignore')
+
+# importing Stopwords
+import nltk
+from nltk.corpus import stopwords
+import string
+
+# models
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+
+# train test split
+from sklearn.model_selection import train_test_split, GridSearchCV
+
+# Pipeline
+from sklearn.pipeline import Pipeline
+
+# score
+from sklearn.metrics import confusion_matrix,classification_report,ConfusionMatrixDisplay
+from sklearn.metrics import accuracy_score
+Import Data
+df=pd.read_csv('/kaggle/input/spam-ham-dataset/spam_dataset.csv')
+---------------------------------------------------------------------------
+FileNotFoundError                         Traceback (most recent call last)
+Cell In[2], line 1
+----> 1 df=pd.read_csv('/kaggle/input/spam-ham-dataset/spam_dataset.csv')
+
+File ~\anaconda3\Lib\site-packages\pandas\io\parsers\readers.py:912, in read_csv(filepath_or_buffer, sep, delimiter, header, names, index_col, usecols, dtype, engine, converters, true_values, false_values, skipinitialspace, skiprows, skipfooter, nrows, na_values, keep_default_na, na_filter, verbose, skip_blank_lines, parse_dates, infer_datetime_format, keep_date_col, date_parser, date_format, dayfirst, cache_dates, iterator, chunksize, compression, thousands, decimal, lineterminator, quotechar, quoting, doublequote, escapechar, comment, encoding, encoding_errors, dialect, on_bad_lines, delim_whitespace, low_memory, memory_map, float_precision, storage_options, dtype_backend)
+    899 kwds_defaults = _refine_defaults_read(
+    900     dialect,
+    901     delimiter,
+   (...)
+    908     dtype_backend=dtype_backend,
+    909 )
+    910 kwds.update(kwds_defaults)
+--> 912 return _read(filepath_or_buffer, kwds)
+
+File ~\anaconda3\Lib\site-packages\pandas\io\parsers\readers.py:577, in _read(filepath_or_buffer, kwds)
+    574 _validate_names(kwds.get("names", None))
+    576 # Create the parser.
+--> 577 parser = TextFileReader(filepath_or_buffer, **kwds)
+    579 if chunksize or iterator:
+    580     return parser
+
+File ~\anaconda3\Lib\site-packages\pandas\io\parsers\readers.py:1407, in TextFileReader.__init__(self, f, engine, **kwds)
+   1404     self.options["has_index_names"] = kwds["has_index_names"]
+   1406 self.handles: IOHandles | None = None
+-> 1407 self._engine = self._make_engine(f, self.engine)
+
+File ~\anaconda3\Lib\site-packages\pandas\io\parsers\readers.py:1661, in TextFileReader._make_engine(self, f, engine)
+   1659     if "b" not in mode:
+   1660         mode += "b"
+-> 1661 self.handles = get_handle(
+   1662     f,
+   1663     mode,
+   1664     encoding=self.options.get("encoding", None),
+   1665     compression=self.options.get("compression", None),
+   1666     memory_map=self.options.get("memory_map", False),
+   1667     is_text=is_text,
+   1668     errors=self.options.get("encoding_errors", "strict"),
+   1669     storage_options=self.options.get("storage_options", None),
+   1670 )
+   1671 assert self.handles is not None
+   1672 f = self.handles.handle
+
+File ~\anaconda3\Lib\site-packages\pandas\io\common.py:859, in get_handle(path_or_buf, mode, encoding, compression, memory_map, is_text, errors, storage_options)
+    854 elif isinstance(handle, str):
+    855     # Check whether the filename is to be opened in binary mode.
+    856     # Binary mode does not support 'encoding' and 'newline'.
+    857     if ioargs.encoding and "b" not in ioargs.mode:
+    858         # Encoding
+--> 859         handle = open(
+    860             handle,
+    861             ioargs.mode,
+    862             encoding=ioargs.encoding,
+    863             errors=errors,
+    864             newline="",
+    865         )
+    866     else:
+    867         # Binary mode
+    868         handle = open(handle, ioargs.mode)
+
+FileNotFoundError: [Errno 2] No such file or directory: '/kaggle/input/spam-ham-dataset/spam_dataset.csv'
+Basic Analysis
+df.head()
+df.describe()
+df['label'].value_counts()
+df.info()
+# adding new column as length of the text
+df['length'] = df['text'].apply(len)
+df.head()
+Unnamed: 0	label	text	label_num	length
+0	605	ham	Subject: enron methanol ; meter # : 988291\r\n...	0	327
+1	2349	ham	Subject: hpl nom for january 9 , 2001\r\n( see...	0	97
+2	3624	ham	Subject: neon retreat\r\nho ho ho , we ' re ar...	0	2524
+3	4685	spam	Subject: photoshop , windows , office . cheap ...	1	414
+4	2030	ham	Subject: re : indian springs\r\nthis deal is t...	0	336
+EDA
+# plot for count of spam and ham in data
+plt.figure(figsize=(14,6))
+sns.set_style('darkgrid')
+sns.countplot(x='label',data=df)
+plt.title('Number of Spam and Ham')
+Text(0.5, 1.0, 'Number of Spam and Ham')
+
+# Plot for distribution lenth of text
+plt.figure(figsize=(12,8))
+sns.histplot(x='length',data=df,bins=100)
+plt.title('Length of Text')
+Text(0.5, 1.0, 'Length of Text')
+
+# maximum lenth text 
+df[df['length']==df['length'].max()]['text']
+949    Subject: fw : " red , white and blue out "\r\n...
+Name: text, dtype: object
+# distribution of spam and ham by length of text
+df.hist(column='length',by='label',figsize=(12,8))
+array([<Axes: title={'center': 'ham'}>, <Axes: title={'center': 'spam'}>],
+      dtype=object)
+
+Feature Enginering
+# function to remove punctuation and stopwords
+def text_process(text):
+    non_punc = [char for char in text if char not in string.punctuation]
+    non_punc=''.join(non_punc)
+    return [word for word in non_punc.split() if word not in stopwords.words('english')]
+Train Test Split
+# define X(features),y(target)
+X= df['text']
+y=df['label']
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.33, random_state=42)
+Modles
+# creating a pipline to model the data
+# pipeline for MultinomialNB
+pipe_mnb = Pipeline([
+    ('bow',CountVectorizer(analyzer=text_process)),
+    ('tf',TfidfTransformer()),
+    ('classifier',MultinomialNB())
+])
+
+# pipeline for Random Forest Classifier
+pipe_rf =Pipeline([
+    ('bow',CountVectorizer(analyzer=text_process)),
+    ('tf',TfidfTransformer()),
+    ('classifier',RandomForestClassifier())
+])
+
+# pipeline for Random Forest Classifier
+pipe_svc =Pipeline([
+    ('bow',CountVectorizer(analyzer=text_process)),
+    ('tf',TfidfTransformer()),
+    ('classifier',SVC())
+])
+# fit the data
+pipe_mnb.fit(X_train,y_train)
+pipe_rf.fit(X_train,y_train)
+pipe_svc.fit(X_train,y_train)
+Pipeline(steps=[('bow',
+                 CountVectorizer(analyzer=<function text_process at 0x7c546e276c20>)),
+                ('tf', TfidfTransformer()), ('classifier', SVC())])
+In a Jupyter environment, please rerun this cell to show the HTML representation or trust the notebook.
+On GitHub, the HTML representation is unable to render, please try loading this page with nbviewer.org.
+# predict the target feature
+pred_mnb = pipe_mnb.predict(X_test)
+pred_rf = pipe_rf.predict(X_test)
+pred_svc = pipe_svc.predict(X_test)
+ 
+Prediction Accuracy
+print('The accuracy for Multinomial Classifer:',accuracy_score(y_test,pred_mnb)*100)
+print('The accuracy for Random_forest Classifer:',accuracy_score(y_test,pred_rf)*100)
+print('The accuracy for SVC:',accuracy_score(y_test,pred_svc)*100)
+The accuracy for Multinomial Classifer: 91.73989455184535
+The accuracy for Random_forest Classifer: 97.4223784417106
+The accuracy for SVC: 98.82835383714118
+The SVC predicts better tham Random Forest Model and Multinomial.
+
+# print confusion matrix and classification report
+print ('Classification report on SVC:')
+print('\n')
+print(classification_report(y_test,pred_svc))
+Classification report on SVC:
+
+
+              precision    recall  f1-score   support
+
+         ham       1.00      0.99      0.99      1246
+        spam       0.97      0.99      0.98       461
+
+    accuracy                           0.99      1707
+   macro avg       0.98      0.99      0.99      1707
+weighted avg       0.99      0.99      0.99      1707
+
+# Display confusioni matrix for SVC
+
+sns.set_style('ticks')
+ConfusionMatrixDisplay(confusion_matrix(y_test,pred_svc)).plot()
+plt.title("Confusion Matrix for SVC")
+Text(0.5, 1.0, 'Confusion Matrix for SVC')
+
+from sklearn.model_selection import cross_val_score
+
+# Number of folds
+k = 5
+
+# Initialize the SVC model in the pipeline
+pipe_svc.set_params(classifier=SVC())
+
+# Perform k-fold cross-validation
+cv_scores = cross_val_score(pipe_svc, X, y, cv=k)
+
+# Output the results
+print(f'CV Scores for each fold: {cv_scores}')
+print(f'Average CV Score: {np.mean(cv_scores)}')
+CV Scores for each fold: [0.98937198 0.98742747 0.99323017 0.98549323 0.99129594]
+Average CV Score: 0.9893637578373934
+ 
